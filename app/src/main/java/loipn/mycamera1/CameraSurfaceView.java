@@ -1,7 +1,6 @@
 package loipn.mycamera1;
 
 import android.app.Activity;
-import android.app.Dialog;
 import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.Intent;
@@ -9,9 +8,13 @@ import android.graphics.Bitmap;
 import android.graphics.Bitmap.CompressFormat;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
-import android.graphics.Color;
+import android.graphics.ColorMatrix;
+import android.graphics.ColorMatrixColorFilter;
+import android.graphics.ImageFormat;
 import android.graphics.Matrix;
-import android.graphics.drawable.ColorDrawable;
+import android.graphics.Paint;
+import android.graphics.Rect;
+import android.graphics.YuvImage;
 import android.hardware.Camera;
 import android.hardware.Camera.PictureCallback;
 import android.hardware.Camera.PreviewCallback;
@@ -28,11 +31,7 @@ import android.util.DisplayMetrics;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
-import android.view.View;
-import android.view.Window;
 import android.view.WindowManager;
-import android.widget.ImageView;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.ByteArrayOutputStream;
@@ -62,6 +61,8 @@ public class CameraSurfaceView extends SurfaceView implements
     private String FOLDER = "Virtnet";
 
     private byte[] dataImage;
+
+    private Bitmap bmOut;
 
     public CameraSurfaceView(Activity context) {
         super(context);
@@ -108,7 +109,8 @@ public class CameraSurfaceView extends SurfaceView implements
         List<Size> supportedPictureSizes = camera.getParameters().getSupportedPictureSizes();
         List<Camera.Size> sizeList = param.getSupportedPreviewSizes();
         if (sizeList.size() > 0) {
-            Camera.Size size = getOptimalPreviewSize(sizeList, StaticFunction.getScreenWidth(context), StaticFunction.getScreenHeight(context));
+//            Camera.Size size = getOptimalPreviewSize(sizeList, StaticFunction.getScreenWidth(context), StaticFunction.getScreenHeight(context));
+            Camera.Size size = sizeList.get(4);
             Camera.Size sizePicture = null;
             for (int i = 0; i < sizeList.size(); i++) {
                 if (sizeList.get(i).width == size.width && sizeList.get(i).height == size.height) {
@@ -220,7 +222,7 @@ public class CameraSurfaceView extends SurfaceView implements
         // start preview with new settings
         try {
             camera.setPreviewDisplay(surfaceHolder);
-            //camera.setPreviewCallback(previewCallback);
+            camera.setPreviewCallback(previewCallback);
             camera.startPreview();
         } catch (Exception e) {
 
@@ -233,9 +235,39 @@ public class CameraSurfaceView extends SurfaceView implements
 
         @Override
         public void onPreviewFrame(byte[] data, Camera camera) {
+
+            // get byte
+
             // TODO Auto-generated method stub
-            /*i++;
-            txt1.setText(i + " " + degrees);*/
+//            i++;
+//            Log.e("previewCallback", System.currentTimeMillis() + "-" + i);
+
+            Camera.Parameters parameters = camera.getParameters();
+            int width = parameters.getPreviewSize().width;
+            int height = parameters.getPreviewSize().height;
+
+            YuvImage yuv = new YuvImage(data, parameters.getPreviewFormat(), width, height, null);
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            yuv.compressToJpeg(new Rect(0, 0, width, height), 100, out);
+
+            byte[] bytes = out.toByteArray();
+            final Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+            bmOut = bitmap;
+
+            invalidate();
+
+//            int width = bmOut.getWidth();
+//            int height = bmOut.getHeight();
+//            for (int x = 0; x < width; ++x) {
+//                for (int y = 0; y < height; ++y) {
+////                    int alpha = Color.alpha(bmOut.getPixel(x, y))/2;
+////
+////                    //int color = pngTestBM.getPixel(myX, myY);
+////                    //boolean transparent = (color & 0xff000000) == 0x0;
+////                    bmOut.setPixel(x, y, alpha);
+//                }
+//            }
         }
     };
 
@@ -410,7 +442,7 @@ public class CameraSurfaceView extends SurfaceView implements
         // TODO Auto-generated method stub
         sensorManager.unregisterListener(this);
         if (camera != null) {
-            //camera.setPreviewCallback(null);
+            camera.setPreviewCallback(null);
             camera.stopPreview();
             camera.release();
 //            Toast.makeText(context, "released camera", Toast.LENGTH_SHORT).show();
@@ -418,9 +450,45 @@ public class CameraSurfaceView extends SurfaceView implements
         }
     }
 
+    public Bitmap toGrayscale(Bitmap bmpOriginal) {
+        int width, height;
+        height = bmpOriginal.getHeight();
+        width = bmpOriginal.getWidth();
+
+        Bitmap bmpGrayscale = Bitmap.createBitmap(width, height, Bitmap.Config.RGB_565);
+        Canvas c = new Canvas(bmpGrayscale);
+        Paint paint = new Paint();
+        ColorMatrix cm = new ColorMatrix();
+        cm.setSaturation(0);
+        ColorMatrixColorFilter f = new ColorMatrixColorFilter(cm);
+        paint.setColorFilter(f);
+        c.drawBitmap(bmpOriginal, 0, 0, paint);
+        return bmpGrayscale;
+    }
+
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
+        /*Bitmap.Config conf = Bitmap.Config.ARGB_8888;
+        Bitmap bitmap = Bitmap.createBitmap(StaticFunction.getScreenWidth(context), StaticFunction.getScreenHeight(context) / 2, conf);
+        int width = bitmap.getWidth();
+        int height = bitmap.getHeight();
+        int color = Color.argb(80, 102, 0, 51);
+        for (int x = 0; x < width; ++x) {
+            for (int y = 0; y < height; ++y) {
+                bitmap.setPixel(x, y, color);
+            }
+        }*/
+
+
+//        int a = Math.abs(Color.alpha(Color.GREEN))/2;
+//        int r = Math.abs(Color.red(Color.GREEN) - Color.red(Color.RED));
+//        int g = Math.abs(Color.green(Color.GREEN) - Color.green(Color.RED));
+//        int b = Math.abs(Color.blue(Color.GREEN) - Color.blue(Color.RED));
+        if (bmOut != null) {
+//            Bitmap bmp = toGrayscale(bmOut);
+            canvas.drawBitmap(bmOut, 0, 0, new Paint());
+        }
 
 //        Paint myPaint = new Paint();
 //        myPaint.setColor(Color.BLUE);
