@@ -8,9 +8,9 @@ import android.graphics.Bitmap;
 import android.graphics.Bitmap.CompressFormat;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.ColorMatrix;
 import android.graphics.ColorMatrixColorFilter;
-import android.graphics.ImageFormat;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Rect;
@@ -28,6 +28,8 @@ import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Environment;
 import android.util.DisplayMetrics;
+import android.util.Log;
+import android.view.Display;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -53,6 +55,7 @@ public class CameraSurfaceView extends SurfaceView implements
     int i = 0;
 
     int degrees = 0;
+    int refresh;
 
     private SensorManager sensorManager;
     private Sensor sensorAccelerometer;
@@ -64,21 +67,27 @@ public class CameraSurfaceView extends SurfaceView implements
 
     private Bitmap bmOut;
 
+    long startTime = System.currentTimeMillis();
+
+    boolean isDoing = false;
+
     public CameraSurfaceView(Activity context) {
         super(context);
+        this.refresh = 0;
         this.context = context;
         this.FOLDER = context.getString(R.string.app_name);
         surfaceHolder = this.getHolder();
         surfaceHolder.addCallback(this);
         surfaceHolder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
+        surfaceHolder.setFixedSize(768, 1024);
 
         setWillNotDraw(false); // them cai nay moi ve len onDraw() dc
 
         DisplayMetrics metrics = new DisplayMetrics();
         ((Activity) context).getWindowManager().getDefaultDisplay()
                 .getMetrics(metrics);
-        // Display display = ((WindowManager)
-        // context.getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay();
+        Display display = ((WindowManager)
+                context.getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay();
     }
 
     public void setFilename(String filename) {
@@ -108,16 +117,28 @@ public class CameraSurfaceView extends SurfaceView implements
         param = camera.getParameters();
         List<Size> supportedPictureSizes = camera.getParameters().getSupportedPictureSizes();
         List<Camera.Size> sizeList = param.getSupportedPreviewSizes();
+//        List<int[]> listSupportedPreviewFpsRange = param.getSupportedPreviewFpsRange();
+        String preview = "";
+        for (int i = 0; i < sizeList.size(); i++) {
+            preview += i + " w:" + sizeList.get(i).width + " h:" + sizeList.get(i).height + "\n";
+        }
+        String picture = "";
+        for (int i = 0; i < supportedPictureSizes.size(); i++) {
+            picture += i + " w:" + supportedPictureSizes.get(i).width + " h:" + supportedPictureSizes.get(i).height + "\n";
+        }
+
+//        Log.e("camera_info", preview);
+//        Log.e("camera_info", picture);
         if (sizeList.size() > 0) {
 //            Camera.Size size = getOptimalPreviewSize(sizeList, StaticFunction.getScreenWidth(context), StaticFunction.getScreenHeight(context));
-            Camera.Size size = sizeList.get(4);
-            Camera.Size sizePicture = null;
-            for (int i = 0; i < sizeList.size(); i++) {
-                if (sizeList.get(i).width == size.width && sizeList.get(i).height == size.height) {
-                    sizePicture = supportedPictureSizes.get(i);
-                    break;
-                }
-            }
+            Camera.Size size = sizeList.get(9);
+            Camera.Size sizePicture = supportedPictureSizes.get(15);
+//            for (int i = 0; i < sizeList.size(); i++) {
+//                if (sizeList.get(i).width == size.width && sizeList.get(i).height == size.height) {
+//                    sizePicture = supportedPictureSizes.get(i);
+//                    break;
+//                }
+//            }
             if (size != null) {
                 param.setPreviewSize(size.width, size.height);
                 param.setPictureSize(sizePicture.width, sizePicture.height);
@@ -131,7 +152,30 @@ public class CameraSurfaceView extends SurfaceView implements
 //        param.setPreviewSize(sizeList.get(0).width, sizeList.get(0).height);
 //        param.setPictureSize(supportedPictureSizes.get(0).width, supportedPictureSizes.get(0).height);
 //        param.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE);
+//        param.setPreviewFpsRange(15000, 15000);
+//        int[] frameRate = new int[2];
+//        param.getPreviewFpsRange(frameRate);
+//        int pic = param.getPictureFormat();
+//        List<Integer> pics = param.getSupportedPictureFormats();
         camera.setParameters(param);
+        int rotation = ((WindowManager) context.getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay().getRotation();
+        degrees = 0;
+        switch (rotation) {
+            case Surface.ROTATION_0:
+                degrees = 90;
+                break;
+            case Surface.ROTATION_90:
+                degrees = 0;
+                break;
+            case Surface.ROTATION_180:
+                degrees = 270;
+                break;
+            case Surface.ROTATION_270:
+                degrees = 180;
+                break;
+        }
+        camera.setDisplayOrientation(degrees);
+
         try {
             // The Surface has been created, now tell the camera where to draw
             // the preview.
@@ -185,6 +229,7 @@ public class CameraSurfaceView extends SurfaceView implements
     }
 
     private void refreshCamera() {
+        refresh++;
         if (surfaceHolder.getSurface() == null) {
             // preview surface does not exist
             return;
@@ -213,16 +258,18 @@ public class CameraSurfaceView extends SurfaceView implements
             case Surface.ROTATION_270:
                 degrees = 180;
                 break;
-
         }
         camera.setDisplayOrientation(degrees);
 
         // set preview size and make any resize, rotate or
         // reformatting changes here
         // start preview with new settings
+
         try {
             camera.setPreviewDisplay(surfaceHolder);
             camera.setPreviewCallback(previewCallback);
+//            camera.setOneShotPreviewCallback(previewCallback);
+//            camera.setPreviewCallbackWithBuffer(previewCallback);
             camera.startPreview();
         } catch (Exception e) {
 
@@ -242,7 +289,18 @@ public class CameraSurfaceView extends SurfaceView implements
 //            i++;
 //            Log.e("previewCallback", System.currentTimeMillis() + "-" + i);
 
+//            AsyncOnDraw asyncOnDraw = new AsyncOnDraw();
+//            asyncOnDraw.execute(data);
+
+//            long start = System.currentTimeMillis();
+
+            if (isDoing) {
+                camera.addCallbackBuffer(data);
+            }
+
+            isDoing = true;
             Camera.Parameters parameters = camera.getParameters();
+
             int width = parameters.getPreviewSize().width;
             int height = parameters.getPreviewSize().height;
 
@@ -252,10 +310,22 @@ public class CameraSurfaceView extends SurfaceView implements
             yuv.compressToJpeg(new Rect(0, 0, width, height), 100, out);
 
             byte[] bytes = out.toByteArray();
-            final Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
-            bmOut = bitmap;
+            BitmapFactory.Options opt = new BitmapFactory.Options();
+            opt.inSampleSize = 1;
+            Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, opt);
+            // Rotate the Bitmap
+            Matrix matrix = new Matrix();
+            matrix.postRotate(degrees);
+
+            bmOut = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, false);
+            bmOut = Bitmap.createScaledBitmap(bmOut, (int) (bmOut.getWidth() * 1.6), (int) (bmOut.getHeight() * 1.6), false);
+            Log.e("camera_info", "w " + bmOut.getWidth());
+            Log.e("camera_info", "h " + bmOut.getHeight());
 
             invalidate();
+            isDoing = false;
+
+//            Log.e("previewCallback", "time: " + (System.currentTimeMillis() - start));
 
 //            int width = bmOut.getWidth();
 //            int height = bmOut.getHeight();
@@ -270,6 +340,42 @@ public class CameraSurfaceView extends SurfaceView implements
 //            }
         }
     };
+
+    private class AsyncOnDraw extends AsyncTask<byte[], Void, Void> {
+
+        @Override
+        protected Void doInBackground(byte[]... params) {
+            byte[] data = params[0];
+            Camera.Parameters parameters = camera.getParameters();
+            int width = parameters.getPreviewSize().width;
+            int height = parameters.getPreviewSize().height;
+
+            YuvImage yuv = new YuvImage(data, parameters.getPreviewFormat(), width, height, null);
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            yuv.compressToJpeg(new Rect(0, 0, width, height), 100, out);
+
+            byte[] bytes = out.toByteArray();
+            BitmapFactory.Options opt = new BitmapFactory.Options();
+            opt.inSampleSize = 1;
+            Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, opt);
+            // Rotate the Bitmap
+            Matrix matrix = new Matrix();
+            matrix.postRotate(degrees);
+
+            bmOut = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, false);
+//            bmOut = Bitmap.createScaledBitmap(bmOut, (int) (bmOut.getWidth() * 3.2), (int) (bmOut.getHeight() * 3.2), false);
+            Log.e("camera_info", "w " + bmOut.getWidth());
+            Log.e("camera_info", "h " + bmOut.getHeight());
+            return null;
+        }
+
+        @Override
+        protected void onPostExecute(Void aVoid) {
+            super.onPostExecute(aVoid);
+            invalidate();
+        }
+    }
 
     private ShutterCallback shutterCallback = new ShutterCallback() {
 
@@ -346,7 +452,7 @@ public class CameraSurfaceView extends SurfaceView implements
 
         @Override
         protected Uri doInBackground(Void... params) {
-            FILE_NAME = System.currentTimeMillis() + ".jpg";
+            FILE_NAME = System.currentTimeMillis() + ".png";
             FileOutputStream outStream = null;
             try {
 //                String absPath = Environment.getExternalStorageDirectory().getAbsolutePath();
@@ -419,11 +525,12 @@ public class CameraSurfaceView extends SurfaceView implements
 
         // Rotate the Bitmap
         Matrix matrix = new Matrix();
-        if (isPortrait) {
-            matrix.postRotate(0);
-        } else {
-            matrix.postRotate(90);
-        }
+//        matrix.postRotate(degrees);
+//        if (isPortrait) {
+//            matrix.postRotate(0);
+//        } else {
+//            matrix.postRotate(90);
+//        }
 
         bitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, false);
 
@@ -480,31 +587,22 @@ public class CameraSurfaceView extends SurfaceView implements
             }
         }*/
 
-
-//        int a = Math.abs(Color.alpha(Color.GREEN))/2;
-//        int r = Math.abs(Color.red(Color.GREEN) - Color.red(Color.RED));
-//        int g = Math.abs(Color.green(Color.GREEN) - Color.green(Color.RED));
-//        int b = Math.abs(Color.blue(Color.GREEN) - Color.blue(Color.RED));
         if (bmOut != null) {
 //            Bitmap bmp = toGrayscale(bmOut);
             canvas.drawBitmap(bmOut, 0, 0, new Paint());
         }
 
-//        Paint myPaint = new Paint();
-//        myPaint.setColor(Color.BLUE);
-//        myPaint.setStyle(Paint.Style.STROKE);
-//        myPaint.setStrokeWidth(3);
-//
-//        Paint p = new Paint();
-//        p.setColor(Color.GREEN);
-//        p.setStrokeWidth(0);
-//        p.setTextSize(20);
-//
-//        canvas.drawText("Row 1", 10, 20, p);
-//        canvas.drawText("Row 1", 100, 20, p);
-//        canvas.drawText("Row 1", 200, 20, p);
-//        canvas.drawText("Row 4", 10, 40, p);
-//        canvas.drawText("Row 5", 10, 60, p);
+        Paint p = new Paint();
+        p.setColor(Color.GREEN);
+        p.setStrokeWidth(0);
+        p.setTextSize(30);
+
+        canvas.drawText("degrees: " + degrees, 100, 50, p);
+        canvas.drawText("refresh: " + refresh, 100, 100, p);
+        canvas.drawText("isPortrait: " + isPortrait, 100, 150, p);
+        long now = System.currentTimeMillis();
+        Log.e("previewCallback", "ondraw: " + (now - startTime));
+        startTime = now;
     }
 
     @Override
