@@ -27,6 +27,10 @@ import android.hardware.SensorManager;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.HandlerThread;
+import android.os.Message;
+import android.support.annotation.UiThread;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.Display;
@@ -42,6 +46,9 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.List;
+
+import loipn.mycamera1.thread.BackgroundThreadExecutor;
+import loipn.mycamera1.thread.UIThreadExecutor;
 
 public class CameraSurfaceView extends SurfaceView implements
         SurfaceHolder.Callback, SensorEventListener {
@@ -71,15 +78,20 @@ public class CameraSurfaceView extends SurfaceView implements
 
     boolean isDoing = false;
 
+    byte[] mPreviewBuffer;
+
+    HandlerThread mCameraThread = null;
+    Handler mCameraHandler = null;
+
     public CameraSurfaceView(Activity context) {
         super(context);
         this.refresh = 0;
         this.context = context;
         this.FOLDER = context.getString(R.string.app_name);
         surfaceHolder = this.getHolder();
-        surfaceHolder.addCallback(this);
+//        surfaceHolder.addCallback(this);
         surfaceHolder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
-        surfaceHolder.setFixedSize(768, 1024);
+        surfaceHolder.setFixedSize(960, 1280);
 
         setWillNotDraw(false); // them cai nay moi ve len onDraw() dc
 
@@ -88,6 +100,9 @@ public class CameraSurfaceView extends SurfaceView implements
                 .getMetrics(metrics);
         Display display = ((WindowManager)
                 context.getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay();
+
+        startCamera();
+
     }
 
     public void setFilename(String filename) {
@@ -95,7 +110,7 @@ public class CameraSurfaceView extends SurfaceView implements
     }
 
     @Override
-    public void surfaceCreated(SurfaceHolder holder) {
+    public synchronized void surfaceCreated(SurfaceHolder holder) {
         // TODO Auto-generated method stub
         sensorManager = (SensorManager) context.getSystemService(context.SENSOR_SERVICE);
         sensorAccelerometer = sensorManager.getDefaultSensor(
@@ -104,88 +119,90 @@ public class CameraSurfaceView extends SurfaceView implements
                 sensorAccelerometer,
                 SensorManager.SENSOR_DELAY_NORMAL);
 
-        try {
-            // open the camera
-            camera = Camera.open();
-//            camera = openFrontFacingCameraGingerbread();
-        } catch (RuntimeException e) {
-            // check for exceptions
-            //System.err.println(e);
-            return;
-        }
-        Camera.Parameters param;
-        param = camera.getParameters();
-        List<Size> supportedPictureSizes = camera.getParameters().getSupportedPictureSizes();
-        List<Camera.Size> sizeList = param.getSupportedPreviewSizes();
-//        List<int[]> listSupportedPreviewFpsRange = param.getSupportedPreviewFpsRange();
-        String preview = "";
-        for (int i = 0; i < sizeList.size(); i++) {
-            preview += i + " w:" + sizeList.get(i).width + " h:" + sizeList.get(i).height + "\n";
-        }
-        String picture = "";
-        for (int i = 0; i < supportedPictureSizes.size(); i++) {
-            picture += i + " w:" + supportedPictureSizes.get(i).width + " h:" + supportedPictureSizes.get(i).height + "\n";
-        }
+//        startCamera();
 
+//        try {
+//            // open the camera
+//            camera = Camera.open();
+////            camera = openFrontFacingCameraGingerbread();
+//        } catch (RuntimeException e) {
+//            // check for exceptions
+//            //System.err.println(e);
+//            return;
+//        }
+//        Camera.Parameters param;
+//        param = camera.getParameters();
+//        List<Size> supportedPictureSizes = camera.getParameters().getSupportedPictureSizes();
+//        List<Camera.Size> sizeList = param.getSupportedPreviewSizes();
+////        List<int[]> listSupportedPreviewFpsRange = param.getSupportedPreviewFpsRange();
+//        String preview = "";
+//        for (int i = 0; i < sizeList.size(); i++) {
+//            preview += i + " w:" + sizeList.get(i).width + " h:" + sizeList.get(i).height + "\n";
+//        }
+//        String picture = "";
+//        for (int i = 0; i < supportedPictureSizes.size(); i++) {
+//            picture += i + " w:" + supportedPictureSizes.get(i).width + " h:" + supportedPictureSizes.get(i).height + "\n";
+//        }
+//
 //        Log.e("camera_info", preview);
 //        Log.e("camera_info", picture);
-        if (sizeList.size() > 0) {
-//            Camera.Size size = getOptimalPreviewSize(sizeList, StaticFunction.getScreenWidth(context), StaticFunction.getScreenHeight(context));
-            Camera.Size size = sizeList.get(9);
-            Camera.Size sizePicture = supportedPictureSizes.get(15);
-//            for (int i = 0; i < sizeList.size(); i++) {
-//                if (sizeList.get(i).width == size.width && sizeList.get(i).height == size.height) {
-//                    sizePicture = supportedPictureSizes.get(i);
-//                    break;
-//                }
+//        if (sizeList.size() > 0) {
+////            Camera.Size size = getOptimalPreviewSize(sizeList, StaticFunction.getScreenWidth(context), StaticFunction.getScreenHeight(context));
+//            Camera.Size size = sizeList.get(9);
+//            Camera.Size sizePicture = supportedPictureSizes.get(15);
+////            for (int i = 0; i < sizeList.size(); i++) {
+////                if (sizeList.get(i).width == size.width && sizeList.get(i).height == size.height) {
+////                    sizePicture = supportedPictureSizes.get(i);
+////                    break;
+////                }
+////            }
+//            if (size != null) {
+//                param.setPreviewSize(size.width, size.height);
+//                param.setPictureSize(sizePicture.width, sizePicture.height);
+////                if (size.width < 1000 || size.height < 1000) {
+////                    param.setPictureSize(size.width * 2, size.height * 2);
+////                } else {
+////                    param.setPictureSize(size.width, size.height);
+////                }
 //            }
-            if (size != null) {
-                param.setPreviewSize(size.width, size.height);
-                param.setPictureSize(sizePicture.width, sizePicture.height);
-//                if (size.width < 1000 || size.height < 1000) {
-//                    param.setPictureSize(size.width * 2, size.height * 2);
-//                } else {
-//                    param.setPictureSize(size.width, size.height);
-//                }
-            }
-        }
-//        param.setPreviewSize(sizeList.get(0).width, sizeList.get(0).height);
-//        param.setPictureSize(supportedPictureSizes.get(0).width, supportedPictureSizes.get(0).height);
-//        param.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE);
-//        param.setPreviewFpsRange(15000, 15000);
-//        int[] frameRate = new int[2];
-//        param.getPreviewFpsRange(frameRate);
-//        int pic = param.getPictureFormat();
-//        List<Integer> pics = param.getSupportedPictureFormats();
-        camera.setParameters(param);
-        int rotation = ((WindowManager) context.getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay().getRotation();
-        degrees = 0;
-        switch (rotation) {
-            case Surface.ROTATION_0:
-                degrees = 90;
-                break;
-            case Surface.ROTATION_90:
-                degrees = 0;
-                break;
-            case Surface.ROTATION_180:
-                degrees = 270;
-                break;
-            case Surface.ROTATION_270:
-                degrees = 180;
-                break;
-        }
-        camera.setDisplayOrientation(degrees);
-
-        try {
-            // The Surface has been created, now tell the camera where to draw
-            // the preview.
-            camera.setPreviewDisplay(surfaceHolder);
-            camera.startPreview();
-        } catch (Exception e) {
-            // check for exceptions
-            //System.err.println(e);
-            return;
-        }
+//        }
+////        param.setPreviewSize(sizeList.get(0).width, sizeList.get(0).height);
+////        param.setPictureSize(supportedPictureSizes.get(0).width, supportedPictureSizes.get(0).height);
+////        param.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE);
+////        param.setPreviewFpsRange(15000, 15000);
+////        int[] frameRate = new int[2];
+////        param.getPreviewFpsRange(frameRate);
+////        int pic = param.getPictureFormat();
+////        List<Integer> pics = param.getSupportedPictureFormats();
+//        camera.setParameters(param);
+//        int rotation = ((WindowManager) context.getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay().getRotation();
+//        degrees = 0;
+//        switch (rotation) {
+//            case Surface.ROTATION_0:
+//                degrees = 90;
+//                break;
+//            case Surface.ROTATION_90:
+//                degrees = 0;
+//                break;
+//            case Surface.ROTATION_180:
+//                degrees = 270;
+//                break;
+//            case Surface.ROTATION_270:
+//                degrees = 180;
+//                break;
+//        }
+//        camera.setDisplayOrientation(degrees);
+//
+//        try {
+//            // The Surface has been created, now tell the camera where to draw
+//            // the preview.
+//            camera.setPreviewDisplay(surfaceHolder);
+//            camera.startPreview();
+//        } catch (Exception e) {
+//            // check for exceptions
+//            //System.err.println(e);
+//            return;
+//        }
     }
 
     private Camera.Size getOptimalPreviewSize(List<Camera.Size> sizes, int w, int h) {
@@ -220,12 +237,117 @@ public class CameraSurfaceView extends SurfaceView implements
         return optimalSize;
     }
 
+    private void startCamera() {
+        if (mCameraThread == null) {
+            mCameraThread = new HandlerThread("CAMERA_THREAD_NAME");
+            mCameraThread.start();
+            mCameraHandler = new Handler(mCameraThread.getLooper());
+        }
+        mCameraHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    // open the camera
+                    camera = Camera.open();
+//            camera = openFrontFacingCameraGingerbread();
+                } catch (RuntimeException e) {
+                    // check for exceptions
+                    //System.err.println(e);
+                    return;
+                }
+                Camera.Parameters param;
+                param = camera.getParameters();
+                List<Size> supportedPictureSizes = camera.getParameters().getSupportedPictureSizes();
+                List<Camera.Size> sizeList = param.getSupportedPreviewSizes();
+//        List<int[]> listSupportedPreviewFpsRange = param.getSupportedPreviewFpsRange();
+                String preview = "";
+                for (int i = 0; i < sizeList.size(); i++) {
+                    preview += i + " w:" + sizeList.get(i).width + " h:" + sizeList.get(i).height + "\n";
+                }
+                String picture = "";
+                for (int i = 0; i < supportedPictureSizes.size(); i++) {
+                    picture += i + " w:" + supportedPictureSizes.get(i).width + " h:" + supportedPictureSizes.get(i).height + "\n";
+                }
+
+//        Log.e("camera_info", preview);
+//        Log.e("camera_info", picture);
+                if (sizeList.size() > 0) {
+//            Camera.Size size = getOptimalPreviewSize(sizeList, StaticFunction.getScreenWidth(context), StaticFunction.getScreenHeight(context));
+                    Camera.Size size = sizeList.get(9);
+                    Camera.Size sizePicture = supportedPictureSizes.get(15);
+//            for (int i = 0; i < sizeList.size(); i++) {
+//                if (sizeList.get(i).width == size.width && sizeList.get(i).height == size.height) {
+//                    sizePicture = supportedPictureSizes.get(i);
+//                    break;
+//                }
+//            }
+                    if (size != null) {
+                        param.setPreviewSize(size.width, size.height);
+                        param.setPictureSize(sizePicture.width, sizePicture.height);
+//                if (size.width < 1000 || size.height < 1000) {
+//                    param.setPictureSize(size.width * 2, size.height * 2);
+//                } else {
+//                    param.setPictureSize(size.width, size.height);
+//                }
+                    }
+                }
+//        param.setPreviewSize(sizeList.get(0).width, sizeList.get(0).height);
+//        param.setPictureSize(supportedPictureSizes.get(0).width, supportedPictureSizes.get(0).height);
+//        param.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE);
+//        param.setPreviewFpsRange(15000, 15000);
+//        int[] frameRate = new int[2];
+//        param.getPreviewFpsRange(frameRate);
+//        int pic = param.getPictureFormat();
+//        List<Integer> pics = param.getSupportedPictureFormats();
+                camera.setParameters(param);
+                int rotation = ((WindowManager) context.getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay().getRotation();
+                degrees = 0;
+                switch (rotation) {
+                    case Surface.ROTATION_0:
+                        degrees = 90;
+                        break;
+                    case Surface.ROTATION_90:
+                        degrees = 0;
+                        break;
+                    case Surface.ROTATION_180:
+                        degrees = 270;
+                        break;
+                    case Surface.ROTATION_270:
+                        degrees = 180;
+                        break;
+                }
+                camera.setDisplayOrientation(degrees);
+
+                try {
+                    // The Surface has been created, now tell the camera where to draw
+                    // the preview.
+//                    camera.setPreviewDisplay(surfaceHolder);
+//                    camera.startPreview();
+
+                    camera.setPreviewDisplay(surfaceHolder);
+//                    mPreviewBuffer = new byte[460800];
+//                    camera.addCallbackBuffer(mPreviewBuffer);
+                    camera.setPreviewCallback(previewCallback);
+                    camera.startPreview();
+                } catch (Exception e) {
+                    // check for exceptions
+                    //System.err.println(e);
+                    return;
+                }
+            }
+        });
+
+        surfaceHolder.addCallback(this);
+    }
+
 
     @Override
     public void surfaceChanged(SurfaceHolder holder, int format, int width,
                                int height) {
         // TODO Auto-generated method stub
-        refreshCamera();
+        if (camera != null) {
+            refreshCamera();
+        }
     }
 
     private void refreshCamera() {
@@ -238,6 +360,7 @@ public class CameraSurfaceView extends SurfaceView implements
         // stop preview before making changes
         try {
             camera.setPreviewCallback(null);
+            camera.setPreviewCallbackWithBuffer(null);
             camera.stopPreview();
         } catch (Exception e) {
             // ignore: tried to stop a non-existent preview
@@ -267,9 +390,11 @@ public class CameraSurfaceView extends SurfaceView implements
 
         try {
             camera.setPreviewDisplay(surfaceHolder);
-            camera.setPreviewCallback(previewCallback);
+//            camera.setPreviewCallback(previewCallback);
 //            camera.setOneShotPreviewCallback(previewCallback);
-//            camera.setPreviewCallbackWithBuffer(previewCallback);
+            mPreviewBuffer = new byte[460800*4];
+            camera.addCallbackBuffer(mPreviewBuffer);
+            camera.setPreviewCallbackWithBuffer(previewCallback);
             camera.startPreview();
         } catch (Exception e) {
 
@@ -287,8 +412,59 @@ public class CameraSurfaceView extends SurfaceView implements
 
             // TODO Auto-generated method stub
 //            i++;
-//            Log.e("previewCallback", System.currentTimeMillis() + "-" + i);
+//            Thread thread = new Thread(new MyRunnable(data));
+//            thread.start();
 
+//            BackgroundThreadExecutor.getInstance().runOnBackground(new MyRunnable(data));
+
+//            Log.e("AsyncOnDraw", "previewCallback " + System.currentTimeMillis() + "-" + i);
+
+//            switch (i % 10) {
+//                case 0:
+//                    AsyncOnDraw asyncOnDraw = new AsyncOnDraw();
+//                    asyncOnDraw.execute(data);
+//                    break;
+//                case 1:
+//                    AsyncOnDraw1 asyncOnDraw1 = new AsyncOnDraw1();
+//                    asyncOnDraw1.execute(data);
+//                    break;
+//                case 2:
+//                    AsyncOnDraw2 asyncOnDraw2 = new AsyncOnDraw2();
+//                    asyncOnDraw2.execute(data);
+//                    break;
+//                case 3:
+//                    AsyncOnDraw3 asyncOnDraw3 = new AsyncOnDraw3();
+//                    asyncOnDraw3.execute(data);
+//                    break;
+//                case 4:
+//                    AsyncOnDraw4 asyncOnDraw4 = new AsyncOnDraw4();
+//                    asyncOnDraw4.execute(data);
+//                    break;
+//                case 5:
+//                    AsyncOnDraw5 asyncOnDraw5 = new AsyncOnDraw5();
+//                    asyncOnDraw5.execute(data);
+//                    break;
+//                case 6:
+//                    AsyncOnDraw6 asyncOnDraw6 = new AsyncOnDraw6();
+//                    asyncOnDraw6.execute(data);
+//                    break;
+//                case 7:
+//                    AsyncOnDraw7 asyncOnDraw7 = new AsyncOnDraw7();
+//                    asyncOnDraw7.execute(data);
+//                    break;
+//                case 8:
+//                    AsyncOnDraw8 asyncOnDraw8 = new AsyncOnDraw8();
+//                    asyncOnDraw8.execute(data);
+//                    break;
+//                case 9:
+//                    AsyncOnDraw9 asyncOnDraw9 = new AsyncOnDraw9();
+//                    asyncOnDraw9.execute(data);
+//                    break;
+//                default:
+//                    AsyncOnDraw asyncOnDraw10 = new AsyncOnDraw();
+//                    asyncOnDraw10.execute(data);
+//                    break;
+//            }
 //            AsyncOnDraw asyncOnDraw = new AsyncOnDraw();
 //            asyncOnDraw.execute(data);
 
@@ -296,9 +472,10 @@ public class CameraSurfaceView extends SurfaceView implements
 
             if (isDoing) {
                 camera.addCallbackBuffer(data);
+                return;
             }
-
             isDoing = true;
+
             Camera.Parameters parameters = camera.getParameters();
 
             int width = parameters.getPreviewSize().width;
@@ -319,10 +496,23 @@ public class CameraSurfaceView extends SurfaceView implements
 
             bmOut = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, false);
             bmOut = Bitmap.createScaledBitmap(bmOut, (int) (bmOut.getWidth() * 1.6), (int) (bmOut.getHeight() * 1.6), false);
-            Log.e("camera_info", "w " + bmOut.getWidth());
-            Log.e("camera_info", "h " + bmOut.getHeight());
+//            Log.e("camera_info", "w " + bmOut.getWidth());
+//            Log.e("camera_info", "h " + bmOut.getHeight());
 
-            invalidate();
+            long now = System.currentTimeMillis();
+            Log.e("AsyncOnDraw", "run-" + (now - startTime) + " " + bmOut.getWidth() + "-" + bmOut.getHeight());
+//            Log.e("AsyncOnDraw", "a0-" + (now));
+            startTime = now;
+
+//            invalidate();
+            UIThreadExecutor.getInstance().runOnUIThread(new Runnable() {
+                @Override
+                public synchronized void run() {
+                    invalidate();
+                }
+            });
+
+            camera.addCallbackBuffer(mPreviewBuffer);
             isDoing = false;
 
 //            Log.e("previewCallback", "time: " + (System.currentTimeMillis() - start));
@@ -340,6 +530,52 @@ public class CameraSurfaceView extends SurfaceView implements
 //            }
         }
     };
+
+    private class MyRunnable implements Runnable {
+
+        byte[] data;
+
+        public MyRunnable(byte[] data) {
+            this.data = data;
+        }
+
+        @Override
+        public synchronized void run() {
+            byte[] data = this.data;
+            Camera.Parameters parameters = camera.getParameters();
+            int width = parameters.getPreviewSize().width;
+            int height = parameters.getPreviewSize().height;
+
+            YuvImage yuv = new YuvImage(data, parameters.getPreviewFormat(), width, height, null);
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            yuv.compressToJpeg(new Rect(0, 0, width, height), 100, out);
+
+            byte[] bytes = out.toByteArray();
+            BitmapFactory.Options opt = new BitmapFactory.Options();
+            opt.inSampleSize = 1;
+            Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, opt);
+            // Rotate the Bitmap
+            Matrix matrix = new Matrix();
+            matrix.postRotate(degrees);
+
+            Bitmap bm = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, false);
+            bm = Bitmap.createScaledBitmap(bm, (int) (bm.getWidth() * 1.6), (int) (bm.getHeight() * 1.6), false);
+            bmOut = bm;
+
+            long now = System.currentTimeMillis();
+            Log.e("AsyncOnDraw", "run-" + (now - startTime) + " " + bmOut.getWidth() + "-" + bmOut.getHeight());
+//            Log.e("AsyncOnDraw", "a0-" + (now));
+            startTime = now;
+
+            UIThreadExecutor.getInstance().runOnUIThread(new Runnable() {
+                @Override
+                public synchronized void run() {
+                    invalidate();
+                }
+            });
+        }
+    }
 
     private class AsyncOnDraw extends AsyncTask<byte[], Void, Void> {
 
@@ -363,17 +599,18 @@ public class CameraSurfaceView extends SurfaceView implements
             Matrix matrix = new Matrix();
             matrix.postRotate(degrees);
 
-            bmOut = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, false);
-//            bmOut = Bitmap.createScaledBitmap(bmOut, (int) (bmOut.getWidth() * 3.2), (int) (bmOut.getHeight() * 3.2), false);
-            Log.e("camera_info", "w " + bmOut.getWidth());
-            Log.e("camera_info", "h " + bmOut.getHeight());
+            Bitmap bm = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, false);
+            bm = Bitmap.createScaledBitmap(bm, (int) (bm.getWidth() * 3.2), (int) (bm.getHeight() * 3.2), false);
             return null;
         }
 
         @Override
         protected void onPostExecute(Void aVoid) {
             super.onPostExecute(aVoid);
-            invalidate();
+            long now = System.currentTimeMillis();
+            Log.e("AsyncOnDraw", "a0-" + (now - startTime));
+//            Log.e("AsyncOnDraw", "a0-" + (now));
+            startTime = now;
         }
     }
 
@@ -550,6 +787,7 @@ public class CameraSurfaceView extends SurfaceView implements
         sensorManager.unregisterListener(this);
         if (camera != null) {
             camera.setPreviewCallback(null);
+            camera.setPreviewCallbackWithBuffer(null);
             camera.stopPreview();
             camera.release();
 //            Toast.makeText(context, "released camera", Toast.LENGTH_SHORT).show();
@@ -574,7 +812,7 @@ public class CameraSurfaceView extends SurfaceView implements
     }
 
     @Override
-    protected void onDraw(Canvas canvas) {
+    protected synchronized void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         /*Bitmap.Config conf = Bitmap.Config.ARGB_8888;
         Bitmap bitmap = Bitmap.createBitmap(StaticFunction.getScreenWidth(context), StaticFunction.getScreenHeight(context) / 2, conf);
@@ -588,8 +826,8 @@ public class CameraSurfaceView extends SurfaceView implements
         }*/
 
         if (bmOut != null) {
-//            Bitmap bmp = toGrayscale(bmOut);
-            canvas.drawBitmap(bmOut, 0, 0, new Paint());
+            Bitmap bmp = toGrayscale(bmOut);
+            canvas.drawBitmap(bmp, 0, 0, new Paint());
         }
 
         Paint p = new Paint();
@@ -600,9 +838,6 @@ public class CameraSurfaceView extends SurfaceView implements
         canvas.drawText("degrees: " + degrees, 100, 50, p);
         canvas.drawText("refresh: " + refresh, 100, 100, p);
         canvas.drawText("isPortrait: " + isPortrait, 100, 150, p);
-        long now = System.currentTimeMillis();
-        Log.e("previewCallback", "ondraw: " + (now - startTime));
-        startTime = now;
     }
 
     @Override
@@ -641,4 +876,336 @@ public class CameraSurfaceView extends SurfaceView implements
         return cam;
     }
 
+    private class AsyncOnDraw1 extends AsyncTask<byte[], Void, Void> {
+
+        @Override
+        protected Void doInBackground(byte[]... params) {
+            byte[] data = params[0];
+            Camera.Parameters parameters = camera.getParameters();
+            int width = parameters.getPreviewSize().width;
+            int height = parameters.getPreviewSize().height;
+
+            YuvImage yuv = new YuvImage(data, parameters.getPreviewFormat(), width, height, null);
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            yuv.compressToJpeg(new Rect(0, 0, width, height), 100, out);
+
+            byte[] bytes = out.toByteArray();
+            BitmapFactory.Options opt = new BitmapFactory.Options();
+            opt.inSampleSize = 1;
+            Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, opt);
+            // Rotate the Bitmap
+            Matrix matrix = new Matrix();
+            matrix.postRotate(degrees);
+
+            Bitmap bm = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, false);
+            bm = Bitmap.createScaledBitmap(bm, (int) (bm.getWidth() * 3.2), (int) (bm.getHeight() * 3.2), false);
+            return null;
+        }
+
+        @Override
+        protected void onPostExecute(Void aVoid) {
+            super.onPostExecute(aVoid);
+            long now = System.currentTimeMillis();
+            Log.e("AsyncOnDraw", "a1-" + (now - startTime));
+//            Log.e("AsyncOnDraw", "a1-" + (now));
+            startTime = now;
+        }
+    }
+
+    private class AsyncOnDraw2 extends AsyncTask<byte[], Void, Void> {
+
+        @Override
+        protected Void doInBackground(byte[]... params) {
+            byte[] data = params[0];
+            Camera.Parameters parameters = camera.getParameters();
+            int width = parameters.getPreviewSize().width;
+            int height = parameters.getPreviewSize().height;
+
+            YuvImage yuv = new YuvImage(data, parameters.getPreviewFormat(), width, height, null);
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            yuv.compressToJpeg(new Rect(0, 0, width, height), 100, out);
+
+            byte[] bytes = out.toByteArray();
+            BitmapFactory.Options opt = new BitmapFactory.Options();
+            opt.inSampleSize = 1;
+            Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, opt);
+            // Rotate the Bitmap
+            Matrix matrix = new Matrix();
+            matrix.postRotate(degrees);
+
+            Bitmap bm = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, false);
+            bm = Bitmap.createScaledBitmap(bm, (int) (bm.getWidth() * 3.2), (int) (bm.getHeight() * 3.2), false);
+            return null;
+        }
+
+        @Override
+        protected void onPostExecute(Void aVoid) {
+            super.onPostExecute(aVoid);
+            long now = System.currentTimeMillis();
+            Log.e("AsyncOnDraw", "a2-" + (now - startTime));
+//            Log.e("AsyncOnDraw", "a2-" + (now));
+            startTime = now;
+        }
+    }
+
+    private class AsyncOnDraw3 extends AsyncTask<byte[], Void, Void> {
+
+        @Override
+        protected Void doInBackground(byte[]... params) {
+            byte[] data = params[0];
+            Camera.Parameters parameters = camera.getParameters();
+            int width = parameters.getPreviewSize().width;
+            int height = parameters.getPreviewSize().height;
+
+            YuvImage yuv = new YuvImage(data, parameters.getPreviewFormat(), width, height, null);
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            yuv.compressToJpeg(new Rect(0, 0, width, height), 100, out);
+
+            byte[] bytes = out.toByteArray();
+            BitmapFactory.Options opt = new BitmapFactory.Options();
+            opt.inSampleSize = 1;
+            Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, opt);
+            // Rotate the Bitmap
+            Matrix matrix = new Matrix();
+            matrix.postRotate(degrees);
+
+            Bitmap bm = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, false);
+            bm = Bitmap.createScaledBitmap(bm, (int) (bm.getWidth() * 3.2), (int) (bm.getHeight() * 3.2), false);
+            return null;
+        }
+
+        @Override
+        protected void onPostExecute(Void aVoid) {
+            super.onPostExecute(aVoid);
+            long now = System.currentTimeMillis();
+            Log.e("AsyncOnDraw", "a3-" + (now - startTime));
+//            Log.e("AsyncOnDraw", "a3-" + (now));
+            startTime = now;
+        }
+    }
+
+    private class AsyncOnDraw4 extends AsyncTask<byte[], Void, Void> {
+
+        @Override
+        protected Void doInBackground(byte[]... params) {
+            byte[] data = params[0];
+            Camera.Parameters parameters = camera.getParameters();
+            int width = parameters.getPreviewSize().width;
+            int height = parameters.getPreviewSize().height;
+
+            YuvImage yuv = new YuvImage(data, parameters.getPreviewFormat(), width, height, null);
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            yuv.compressToJpeg(new Rect(0, 0, width, height), 100, out);
+
+            byte[] bytes = out.toByteArray();
+            BitmapFactory.Options opt = new BitmapFactory.Options();
+            opt.inSampleSize = 1;
+            Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, opt);
+            // Rotate the Bitmap
+            Matrix matrix = new Matrix();
+            matrix.postRotate(degrees);
+
+            Bitmap bm = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, false);
+            bm = Bitmap.createScaledBitmap(bm, (int) (bm.getWidth() * 3.2), (int) (bm.getHeight() * 3.2), false);
+            return null;
+        }
+
+        @Override
+        protected void onPostExecute(Void aVoid) {
+            super.onPostExecute(aVoid);
+            long now = System.currentTimeMillis();
+            Log.e("AsyncOnDraw", "a4-" + (now - startTime));
+//            Log.e("AsyncOnDraw", "a4-" + (now));
+            startTime = now;
+        }
+    }
+
+    private class AsyncOnDraw5 extends AsyncTask<byte[], Void, Void> {
+
+        @Override
+        protected Void doInBackground(byte[]... params) {
+            byte[] data = params[0];
+            Camera.Parameters parameters = camera.getParameters();
+            int width = parameters.getPreviewSize().width;
+            int height = parameters.getPreviewSize().height;
+
+            YuvImage yuv = new YuvImage(data, parameters.getPreviewFormat(), width, height, null);
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            yuv.compressToJpeg(new Rect(0, 0, width, height), 100, out);
+
+            byte[] bytes = out.toByteArray();
+            BitmapFactory.Options opt = new BitmapFactory.Options();
+            opt.inSampleSize = 1;
+            Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, opt);
+            // Rotate the Bitmap
+            Matrix matrix = new Matrix();
+            matrix.postRotate(degrees);
+
+            Bitmap bm = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, false);
+            bm = Bitmap.createScaledBitmap(bm, (int) (bm.getWidth() * 3.2), (int) (bm.getHeight() * 3.2), false);
+            return null;
+        }
+
+        @Override
+        protected void onPostExecute(Void aVoid) {
+            super.onPostExecute(aVoid);
+            long now = System.currentTimeMillis();
+            Log.e("AsyncOnDraw", "a5-" + (now - startTime));
+//            Log.e("AsyncOnDraw", "a5-" + (now));
+            startTime = now;
+        }
+    }
+
+    private class AsyncOnDraw6 extends AsyncTask<byte[], Void, Void> {
+
+        @Override
+        protected Void doInBackground(byte[]... params) {
+            byte[] data = params[0];
+            Camera.Parameters parameters = camera.getParameters();
+            int width = parameters.getPreviewSize().width;
+            int height = parameters.getPreviewSize().height;
+
+            YuvImage yuv = new YuvImage(data, parameters.getPreviewFormat(), width, height, null);
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            yuv.compressToJpeg(new Rect(0, 0, width, height), 100, out);
+
+            byte[] bytes = out.toByteArray();
+            BitmapFactory.Options opt = new BitmapFactory.Options();
+            opt.inSampleSize = 1;
+            Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, opt);
+            // Rotate the Bitmap
+            Matrix matrix = new Matrix();
+            matrix.postRotate(degrees);
+
+            Bitmap bm = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, false);
+            bm = Bitmap.createScaledBitmap(bm, (int) (bm.getWidth() * 3.2), (int) (bm.getHeight() * 3.2), false);
+            return null;
+        }
+
+        @Override
+        protected void onPostExecute(Void aVoid) {
+            super.onPostExecute(aVoid);
+            long now = System.currentTimeMillis();
+            Log.e("AsyncOnDraw", "a6-" + (now - startTime));
+//            Log.e("AsyncOnDraw", "a6-" + (now));
+            startTime = now;
+        }
+    }
+
+    private class AsyncOnDraw7 extends AsyncTask<byte[], Void, Void> {
+
+        @Override
+        protected Void doInBackground(byte[]... params) {
+            byte[] data = params[0];
+            Camera.Parameters parameters = camera.getParameters();
+            int width = parameters.getPreviewSize().width;
+            int height = parameters.getPreviewSize().height;
+
+            YuvImage yuv = new YuvImage(data, parameters.getPreviewFormat(), width, height, null);
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            yuv.compressToJpeg(new Rect(0, 0, width, height), 100, out);
+
+            byte[] bytes = out.toByteArray();
+            BitmapFactory.Options opt = new BitmapFactory.Options();
+            opt.inSampleSize = 1;
+            Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, opt);
+            // Rotate the Bitmap
+            Matrix matrix = new Matrix();
+            matrix.postRotate(degrees);
+
+            Bitmap bm = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, false);
+            bm = Bitmap.createScaledBitmap(bm, (int) (bm.getWidth() * 3.2), (int) (bm.getHeight() * 3.2), false);
+            return null;
+        }
+
+        @Override
+        protected void onPostExecute(Void aVoid) {
+            super.onPostExecute(aVoid);
+            long now = System.currentTimeMillis();
+            Log.e("AsyncOnDraw", "a7-" + (now - startTime));
+//            Log.e("AsyncOnDraw", "a7-" + (now));
+            startTime = now;
+        }
+    }
+
+    private class AsyncOnDraw8 extends AsyncTask<byte[], Void, Void> {
+
+        @Override
+        protected Void doInBackground(byte[]... params) {
+            byte[] data = params[0];
+            Camera.Parameters parameters = camera.getParameters();
+            int width = parameters.getPreviewSize().width;
+            int height = parameters.getPreviewSize().height;
+
+            YuvImage yuv = new YuvImage(data, parameters.getPreviewFormat(), width, height, null);
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            yuv.compressToJpeg(new Rect(0, 0, width, height), 100, out);
+
+            byte[] bytes = out.toByteArray();
+            BitmapFactory.Options opt = new BitmapFactory.Options();
+            opt.inSampleSize = 1;
+            Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, opt);
+            // Rotate the Bitmap
+            Matrix matrix = new Matrix();
+            matrix.postRotate(degrees);
+
+            Bitmap bm = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, false);
+            bm = Bitmap.createScaledBitmap(bm, (int) (bm.getWidth() * 3.2), (int) (bm.getHeight() * 3.2), false);
+            return null;
+        }
+
+        @Override
+        protected void onPostExecute(Void aVoid) {
+            super.onPostExecute(aVoid);
+            long now = System.currentTimeMillis();
+            Log.e("AsyncOnDraw", "a8-" + (now - startTime));
+//            Log.e("AsyncOnDraw", "a8-" + (now));
+            startTime = now;
+        }
+    }
+
+    private class AsyncOnDraw9 extends AsyncTask<byte[], Void, Void> {
+
+        @Override
+        protected Void doInBackground(byte[]... params) {
+            byte[] data = params[0];
+            Camera.Parameters parameters = camera.getParameters();
+            int width = parameters.getPreviewSize().width;
+            int height = parameters.getPreviewSize().height;
+
+            YuvImage yuv = new YuvImage(data, parameters.getPreviewFormat(), width, height, null);
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            yuv.compressToJpeg(new Rect(0, 0, width, height), 100, out);
+
+            byte[] bytes = out.toByteArray();
+            BitmapFactory.Options opt = new BitmapFactory.Options();
+            opt.inSampleSize = 1;
+            Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, opt);
+            // Rotate the Bitmap
+            Matrix matrix = new Matrix();
+            matrix.postRotate(degrees);
+
+            Bitmap bm = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, false);
+            bm = Bitmap.createScaledBitmap(bm, (int) (bm.getWidth() * 3.2), (int) (bm.getHeight() * 3.2), false);
+            return null;
+        }
+
+        @Override
+        protected void onPostExecute(Void aVoid) {
+            super.onPostExecute(aVoid);
+            long now = System.currentTimeMillis();
+            Log.e("AsyncOnDraw", "a9-" + (now - startTime));
+//            Log.e("AsyncOnDraw", "a9-" + (now));
+            startTime = now;
+        }
+    }
 }
